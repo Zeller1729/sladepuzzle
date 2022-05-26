@@ -1,616 +1,701 @@
-(()=>{
- 
-    const puzzleScreenInfo ={
-        size : 500,         // キャンバスのサイズ
-        frameSize : 20 ,    // ゲーム盤外枠の幅
-        pieceNum : 4,       // 横方向のピースの数
-        animeTime: 200,      // アニメーション時間
-    };
- 
-    /**
-     * キャンバスを作成して配置
-     * @param divId キャンバスを作成するDIV要素のID
-     * @returns {[canvas,canvas]} [背景,パズル]のキャンバス配列
-     */
-    const makeSlidePuzzle = function ( divId  ) {
- 
-            // div要素取得
-        const parentDiv = document.getElementById( divId );
-        if( parentDiv === null ) throw new Error("id:" + divId + "がない");
- 
-            // キャンバスの表示サイズ
-        const viewSize = Math.min( parentDiv.clientWidth , parentDiv.clientHeight );
- 
-            // キャンバスのスタイル設定
-        const style ={ width : viewSize + "px" , height : viewSize + "px" ,
-            top : ((parentDiv.clientHeight - viewSize) / 2).toString() + "px" ,
-            left : ((parentDiv.clientWidth - viewSize) / 2).toString() + "px" };
- 
-            // キャンバスを3枚作成
-        return [1,2,3].map( zindex => {
-            const cv = document.createElement("canvas" );
-            const layer = new layerCtrl( cv ,zindex );
-            layer.setSize(puzzleScreenInfo.size,puzzleScreenInfo.size );
- 
-            layer.setStyle( style );
- 
-            parentDiv.appendChild( cv );
-            return layer;
-        });
-    };
- 
-    /**
-     * 背景描画用オブジェクト
-     * @param layer
-     */
-    const backGroundDrawFunc = function ( layer ) {
- 
-        this.getLayer = ()=> layer;
- 
-        this.frame = null; // 外周 [ 始点x , 始点y , 幅 , 高さ ]
-        this.innerFrame = null; // 内周( パズルエリア )
- 
-        this.frameColor = "burlywood"; // 外周色
-        this.frameLineColor = "dimgray"; // 外周の線色
-        this.bottomPlateColor ="tan"; // 底板の色
-    };
-    backGroundDrawFunc.prototype={
-        /**
-         * 背景描画に必要な座標を計算
-         */
-        init(){
-            const   {size,frameSize} = {...puzzleScreenInfo};
- 
-            // 外周,内周セット
-            this.frame = [0 , 0 , size , size];
-            this.innerFrame = [ frameSize , frameSize,size - frameSize*2,size - frameSize*2  ];
-            return this;
-        },
-        /**
-         * init()で計算した情報をもとに背景を描画
-         */
-        draw(  ){
-            this.getLayer().clearRect( this.frame )
-                .rect( this.frame , this.frameColor , null )
-                .rect( this.innerFrame , this.bottomPlateColor , this.frameLineColor );
-        }
-    };
-    /**
-     * ピースの描画用オブジェクト
-     * @param layer
-     * @param animeLayer
-     */
-    const pieceDrawFunc = function ( layer , animeLayer ) {
- 
-            this.getLayer = ()=> layer;
-            this.getAnimeLayer = ()=> animeLayer;
- 
-            this.puzzleSize; // 枠を除いたパズルのサイズ
-            this.pieceSize;  // １ピースのサイズ
-            this.pieceData; // ピースデータの配列
-            this.allPiceNUm; // ピースの総数
-            this.pieceData;  // 盤上を分割した座標データ
-            this.pieceImage;  // ピースのImageデータ
- 
-            this.pieceFillColor = "white";
-            this.pieceStrokeColor = "dimgray";
- 
-            this.textStyle = {
-                fillStyle : "black",
-                strokeStyle : "white",
-                textAlign : "center",
-                textBaseline : "middle",
-                lineWidth : 4,
-                font : "20px 'arial'",
-            };
-    };
- 
-    pieceDrawFunc.prototype = {
- 
-        /**
-         * ピースの描画に必要な座標を計算
-         */
-        init(  ){
- 
-            const layer =  this.getLayer();
-            layer.setIndex(0);
- 
-            const   {size,frameSize,pieceNum,moveStep} = {...puzzleScreenInfo};
-            const   topLeftPos =  frameSize;
- 
-            this.clear( );
- 
-            this.puzzleSize = size - frameSize * 2;
-            const pieceSize = Math.round(this.puzzleSize / pieceNum);
-            this.pieceSize = pieceSize;
-            this.allPiceNUm = pieceNum * pieceNum;
- 
-            const pieceSizehalf =  Math.round(pieceSize / 2 );
-            const pieceRect = [ 0 , 0 , pieceSize , pieceSize];
- 
-            this.pieceData = [];this.pieceImage = [];
- 
-            for( let i = 0 ; i < pieceNum ; i ++ ){
-                const topPos = topLeftPos + i * pieceSize;
- 
-                for( let j = 0 ; j < pieceNum ; j ++ ){
-                    const leftPos = topLeftPos + j * pieceSize;
- 
-                    layer.clearRect( pieceRect)
-                        .rect( pieceRect , this.pieceFillColor , this.pieceStrokeColor )
-                        .text( this.textStyle , (i*4 + j + 1).toString() , pieceSizehalf ,  pieceSizehalf );
- 
-                        // 座標データを記憶
-                    this.pieceData.push( {
-                        topLeftPos : [ leftPos  , topPos ],
-                        rect : [ leftPos  , topPos , pieceSize , pieceSize]
-                    });
-                        // 画像イメージ等を記憶
-                    this.pieceImage.push( layer.getImageData( pieceRect) );
-                }
-            }
-            layer.clearRect( [0 ,0 ,  size,size] );
- 
-            layer.resetIndex();
- 
-        },
-        /**
-         * ピースを描画
-         * @param piecePos ゲーム盤での位置 0～
-         * @param pieceNumber ピースに表示する番号
-         * @param anime アニメレイヤーに表示するかどうか
-         */
-        draw( piecePos , pieceNumber ,  anime = false){
-            if( pieceNumber === null ) return;
-            if( piecePos > this.allPiceNUm - 1  || pieceNumber >= this.allPiceNUm - 1 )
-                throw new Error( "piecePos Max Over" );
- 
-            const piecePosData = this.pieceData[ piecePos ];
-            const pieceImageData = this.pieceImage[ pieceNumber ];
- 
-            const posX =  piecePosData.topLeftPos[0];
-            const posY =  piecePosData.topLeftPos[1];
- 
-            ((anime) ? this.getAnimeLayer() : this.getLayer()).clearRect( piecePosData.rect )
-                .putImageData( pieceImageData , posX , posY);
-        },
-        /**
-         * キャンバスのクリア
-         */
-        clear() {
-            this.getLayer().clearRect( [0 ,0,puzzleScreenInfo.size,puzzleScreenInfo.size]);
-        },
-        /**
-         * クリック情報からピース位置を取得
-         * @param e クリックイベントデータ
-         */
-        getClickPiece( e ){
-            const pieceSize = this.pieceSize;
-            const {frameSize,pieceNum} = {...puzzleScreenInfo};
- 
-            const rect = e.target.getBoundingClientRect();
-                  // キャンバスサイズとブラウザ上でのサイズ比率
-            const scale = this.getLayer().getScale();
- 
-                  // ブラウザ座標→キャンバス上でのクリック座標計算
-            let [x,y] = [ (e.clientX - rect.left) * scale,(e.clientY - rect.top)*scale];
- 
-            if( x >= this.puzzleSize || y >= this.puzzleSize ) return null;
- 
-            x -= frameSize; y -= frameSize;// 外枠分差し引く
-            return Math.floor(x / pieceSize) + Math.floor(y / pieceSize ) * pieceNum;
-        },
-        /**
-         * ピースの移動
-         * @param fromPiece 開始位置
-         * @param toPiece 終了入り
-         * @param dir 移動方向
-         * @param pieceNumber 移動するピース
-         */
-        move( fromPiece , toPiece , dir , pieceNumber  ){
- 
-            const fromData = this.pieceData[ fromPiece ];
- 
-                // 移動方向の決定 -1 : 左・上 0 移動なし 1 : 右・下
-            const dirY = { "up" : -1 , "down" : 1 };
-            const dirX = { "left" : -1 , "right" : 1 };
-            const moveX = dir in dirX ? dirX[dir] : 0;
-            const moveY = dir in dirY ? dirY[dir] : 0;
- 
-            const layer = this.getLayer();
- 
-            // アニメーションレイヤに移動するピースを描画
-            this.draw( fromPiece , pieceNumber ,  true);
-                // ピースレイヤーから移動するピースをクリア
-            layer.clearRect( fromData.rect);
-                // Promiseを返す
-            return new Promise( (resolve, reject) => {
- 
-                const animeTime = puzzleScreenInfo.animeTime;
- 
-                const animeLayer = this.getAnimeLayer();
-                const animeStyle = animeLayer.getCanvas().style;
-                animeStyle.top = animeStyle.left = 0;
- 
-                    // キャンバス表示比率を取得
-                const scale = animeLayer.getScale();
- 
-                    // 画面表示上でのピースのサイズを計算
-                const pieceSize = Math.floor(this.pieceSize / scale);
- 
-                let startTime=null; // アニメーション開始時間
- 
-                const animeFunc = time => {
- 
-                        // 初回呼び出しは、startTimeを設定するのみ
-                    if( startTime === null ) {
-                        startTime = time;
-                        window.requestAnimationFrame(animeFunc);return;
-                    }
- 
-                        // 経過時間取得
-                    const nowTime = time - startTime;
- 
-                        // 終了予定時間よりも経過した？
-                    if( nowTime >= animeTime ) {
-                            // ピースレイヤーに移動後のピースを描画
-                        this.draw( toPiece , pieceNumber );
-                            // アニメーションレイヤをクリア
-                        animeLayer.clear();
-                            // アニメーションレイヤのtop/left位置をリセット
-                        animeStyle.top = animeStyle.left = 0;
-                            // Promiseを解決
-                        resolve( true );return;
-                    }
- 
-                        // アニメ終了予定時間と現在の経過時間の比率を計算
-                    const step = nowTime / animeTime;
-                        // 移動距離を求める
-                    const cX = Math.floor(moveX * step * pieceSize);
-                    const cY = Math.floor(moveY * step * pieceSize);
-                        // アニメーションレイヤのtop/leftを変更してアニメーションさせる
-                    animeStyle.left = cX + "px";
-                    animeStyle.top = cY + "px";
- 
-                    window.requestAnimationFrame(animeFunc);
-                };
-                window.requestAnimationFrame(animeFunc);
- 
-            });
- 
-        }
- 
-    };
- 
-    /**
-     * レイヤー（キャンバス）操作ヘルパーオブジェクト
-     * @param canvas
-     * @param zindex
-     */
-    const layerCtrl = function( canvas , zindex ) {
-        const context = canvas.getContext( "2d" );
-        this.getCanvas = () => canvas;
-        this.getContext = () => context;
- 
-        let beforeIndex = zindex;
- 
-        this.setIndex = index => {
-            beforeIndex = canvas.style.zIndex;
-            canvas.style.zIndex = index;
-        };
-        this.resetIndex = () => canvas.style.zIndex = beforeIndex;
-    };
-    layerCtrl.prototype = {
-        /**
-         * キャンバスにスタイルをセット
-         * @param styleObj 例：{ widt: "100px" , height : "100px" }
-         */
-        setStyle( styleObj ){
-            const canvas = this.getCanvas();
-            Object.keys( styleObj ).forEach( e => canvas.style[e] = styleObj[e]);
-        },
-        /**
-         * キャンバスサイズをセット
-         * @param w
-         * @param h
-         */
-        setSize( w , h ){
-            const canvas = this.getCanvas();
-            canvas.setAttribute("width", w );
-            canvas.setAttribute("height", h );
-        },
-        /**
-         * 四角を描画する
-         * @param rect [ 左座標 , 上座標 , 幅 , 高さ ]
-         * @param fillColor 塗りつぶし職 null ... 塗りつぶしなし
-         * @param strokeColor 線色 null ... 線なし
-         */
-        rect( rect , fillColor , strokeColor = null ){
-            const context = this.getContext();
-            context.save();
-            if( fillColor !== null ) {
-                context.fillStyle = fillColor;context.fillRect( ...rect );
-            }
-            if( strokeColor !== null ) {
-                context.strokeColor = strokeColor;context.strokeRect( ...rect );
-            }
-            context.restore();
-            return this;
-        },
-        /**
-         * テキストの描画
-         * @param style  テキスト属性のオブジェクト
-         * @param textString 描画する文字列
-         * @param x 描画位置
-         * @param y 描画位置
-         */
-        text( style , textString ,x , y){
-            const context = this.getContext();
-            context.save();
-            Object.keys( style ).forEach( e => context[e] = style[e]);
-            context.strokeText( textString , x ,  y);
-            context.fillText( textString , x , y );
-            context.restore();
-            return this;
-        },
-        /**
-         * イメージデータの取得
-         * @param rect
-         * @returns {ImageData}
-         */
-        getImageData( rect ){
-            return this.getContext().getImageData( ...rect );
-        },
-        /**
-         * イメージの描画
-         * @param image
-         * @param x
-         * @param y
-         * @returns {layerCtrl}
-         */
-        putImageData( image , x , y ){
-            this.getContext().putImageData( image , x ,y );
-            return this;
-        },
-        /**
-         * キャンバス全面クリア
-         */
-        clear(){
-            const cvs = this.getCanvas();
-            this.getContext().clearRect( 0 , 0 , cvs.width , cvs.height  );
-        },
-        /**
-         * キャンバスクリア
-         * @param rect [ 左座標 , 上座標 , 幅 , 高さ ]
-         * @returns {layerCtrl}
-         */
-        clearRect( rect ) {
-            this.getContext().clearRect( ...rect  );
-            return this;
-        },
-        /**
-         * キャンバスのサイズと表示サイズの比率
-         * @returns {number}
-         */
-        getScale (){
-            const canvas = this.getCanvas();
-            return canvas.clientWidth / canvas.width;
-        }
-    };
- 
-    /**
-     * パズルのメイン処理
-     * @param id div要素のID
-     */
-    const siledePuzzle = function( id ){
- 
-        this.puzzleData; // パズルデータ配列（インデックス：位置　値：その位置のピース番号)
-        this.allPiceNUm; // ピースの総数
- 
-        const [backGroundLyer,puzzleLayer,animeLayer] = makeSlidePuzzle( id );
-        this.drawObj = {
-            backGround : new backGroundDrawFunc( backGroundLyer ),
-            piece : new pieceDrawFunc( puzzleLayer,animeLayer ),
-        };
- 
-        this.init().reDraw();
- 
-        this.clickEnabled = true;
-        this.Shuffled = false;
-        this.gameEnabled = false;
- 
-        this.completeFunc = null;
- 
-        animeLayer.getCanvas().addEventListener( "click" , e =>{
-            if( !this.clickEnabled || !this.gameEnabled || this.Shuffled ) return;
- 
-            // クリック座標取得
-            const clickNumber = this.drawObj.piece.getClickPiece( e );
-            if( clickNumber === null ) {this.clickEnabled = true;return;}
- 
-            this.click(clickNumber);
- 
-                // パズルの完成チェック
-            if( this.puzzleData.every( (e , i) => ( ( i === this.allPiceNUm - 1 && e === null) || ( e === i )) ) ){
-                if( typeof this.completeFunc === "function" )  this.completeFunc();
-            }
-        }, false);
- 
-    };
-    siledePuzzle.prototype={
-        /**
-         * パズル初期化メソッド
-         * @returns {siledePuzzle}
-         */
-        init(){
-            this.puzzleData = [];
-            this.allPiceNUm = puzzleScreenInfo.pieceNum * puzzleScreenInfo.pieceNum;
- 
-            for( let i = 0 ; i < this.allPiceNUm -1 ; i ++ )
-                    this.puzzleData.push( i );
- 
-            this.puzzleData[ this.allPiceNUm -1 ] = null;
- 
-            this.drawObj.backGround.init();
-            this.drawObj.piece.init( );
-            return this;
-        },
-        /**
-         * 再描画メソッド
-         * @returns {siledePuzzle}
-         */
-        reDraw(){
- 
-            this.drawObj.backGround.draw( );
-            this.puzzleData.forEach( (e,i)=>{
-                this.drawObj.piece.draw( i , e );
-            });
-            return this;
-        },
-        /**
-         * クリックされたピースを移動する
-         * @param clickNumber
-         * @returns {Promise<void>}
-         */
-        async click( clickNumber ){
- 
-            this.clickEnabled = false;
-                // クリック周辺のピースを取得
-            const aroundInfo = this.getAroundInfo( clickNumber  );
-            if( aroundInfo === false || aroundInfo.current === null ) {
-                this.clickEnabled = true;return;
-            }
- 
-                // 周辺データから空きスペースを取得
-            const emptyData = aroundInfo.data.filter( e=>e.number===null);
-            if( emptyData.length <= 0 ) {this.clickEnabled = true;return;}
- 
-                // パズルデータの値を入れ替え
-            [this.puzzleData[clickNumber],this.puzzleData[emptyData[0].pos]]
-                = [this.puzzleData[emptyData[0].pos],this.puzzleData[clickNumber]];
- 
-                // 移動アニメーションをおこなう
-            await this.drawObj.piece.move( clickNumber , emptyData[0].pos , emptyData[0].dir , aroundInfo.current );
-            // 結果が出るまで停止（Promiseオブジェクトがリターンされる）
- 
-            // move()が完了したら、以降のコードが実行される
-            this.clickEnabled=true;
- 
-        },
-        /**
-         * 指定した位置の左右上下の情報取得
-         * @param pos
-         * @returns {boolean|{current: (boolean|*), data: [{number: (boolean|*), pos, dir: string}, {number: (boolean|*), pos, dir: string}, {number: (boolean|*), pos, dir: string}, {number: (boolean|*), pos, dir: string}]}}
-         */
-        getAroundInfo( pos ){
-            const pInfo = this.getPieceInfo( pos );
-            if( pInfo === false ) return false;
- 
-            const {pieceNum} = {...puzzleScreenInfo};
- 
-            const   x = pos % pieceNum, y = Math.floor(pos / pieceNum );
- 
-            return {
-                current : pInfo,  // クリック位置のピース番号 nullなら空き
-                /**
-                 * 上下左右のピース番号
-                 *     dir 方向
-                 *     pos その方向の位置番号
-                 *     number その方向のピース番号 nullなら空き falseならピースがない
-                 */
-                data:[
-                    {dir:"left", pos : pos - 1 , number : x <= 0 ? false : this.getPieceInfo( pos - 1 ) },
-                    {dir:"right",pos : pos + 1 , number : x >= pieceNum - 1 ? false : this.getPieceInfo( pos + 1 ) },
-                    {dir:"up" , pos : pos - pieceNum , number: y <= 0 ? false : this.getPieceInfo( pos - pieceNum ) },
-                    {dir:"down" , pos : pos + pieceNum , number : y >= pieceNum - 1 ? false : this.getPieceInfo( pos + pieceNum )}
-                    ]
-            };
-        },
-        /**
-         * 指定した位置にあるピース番号を取得
-         * @param pos
-         */
-        getPieceInfo( pos ){
-            if( pos < 0 || pos >= this.allPiceNUm ) return false;
-            return this.puzzleData[pos];
-        },
-        /**
-         * スライドパズルが完了したとき呼び出される関数をセット
-         * @param t
-         */
-        set onComplete(t){
-            if( typeof t !== "function" ) throw new Error("siledePuzzle:onClick parameter is not function");
-            this.completeFunc = t;
-        },
-        /**
-         * スライドパズルで画面クリックを無効にする
-         * @param t
-         */
-        set enabled(t){
-            this.gameEnabled = t === true;
-        },
-        /**
-         * ピースをシャッフルする
-         * @param count シャッフルする回数
-         * @param callBack 一回の移動後にに呼び出されるコールバック関数
-         */
-        async shuffle( count , callBack ){
- 
-            if( this.shuffled ) return false;
- 
-            this.shuffled = true;
- 
-            let beforePiece=-1;
- 
-            for( let i = 0 ; i < count ; i ++ ){
-                    // 空きスペースを検索
-                const spc = this.puzzleData.indexOf(null);
-                    // 空きスペースの左右上下を取得
-                const aInfo = this.getAroundInfo( spc );
-                    // 移動可能なピースを取得（前回移動したピースを除く）
-                const data = aInfo.data.filter(
-                    e => e.number !== false &&  e.number !== beforePiece
-                );
-                    // ランダムで移動するピースを決定
-                const moveData = data[ Math.floor(Math.random() * data.length) ];
-                beforePiece = moveData.number;
-                    // 移動する
-                await this.click( moveData.pos );
-                    // awaitが付いているので、click()の結果が出るまで一時停止
-                    // 呼び出し元には初回(i===0)のときPromiseオブジェクトがリターンされる
-                if( typeof callBack === "function" ) callBack( i + 1 , count );
-            }
-            this.shuffled = false;
-            return true;
-        }
- 
-    };
- 
-    document.addEventListener( "DOMContentLoaded" , ()=>{
-        const puzzle = new siledePuzzle( "slidepuzzle" );
-        puzzle.onComplete = ()=>{
-            message.innerText = "揃いました！！";
-        };
- 
-        const message = document.getElementById( "message" );
- 
-        const shuffle1 = document.getElementById( "shuffle1" );
-        const shuffle2 = document.getElementById( "shuffle2" );
- 
-        const shuffle = count => {
-            return () =>
-                puzzle.shuffle(count , ( i , max ) => message.innerText=`${i}/${max}`)
-                    .then( e=> {
-                        console.log( e );
-                        if( e ) {
- 
-                            puzzle.enabled = true;
-                            message.innerText= "シャッフル完了";
-                        }
-                    } );
-        };
- 
-        shuffle1.addEventListener( "click" , shuffle(50) );
-        shuffle2.addEventListener( "click" , shuffle(100) );
-    });
-})();
+
+const Assert = {
+    equal: function(a, b){
+         if( a != b ){ throw new Error(`Assertion failed : ${a} != ${b}`)}
+    },     
+    ok: function(b){
+         if( !b ){ throw new Error(`Assertion failed : ${b} is False`)}
+    }
+}
+
+//------------------------------------------------------------------------------
+class Point
+{
+    constructor(x, y){
+         this.x = x || 0;
+         this.y = y || 0;
+         Assert.ok(Number.isInteger(this.x) && Number.isInteger(this.y));
+    }
+
+    toString(){
+         return `(${this.x}, ${this.y})`;
+    }
+
+    valid(){
+         return (0 <= this.x) && (this.x < 4) && (0 <= this.y) && (this.y < 4); 
+    }
+
+    equals(p){
+         Assert.equal('Point', p.constructor.name);
+         return (p.x === this.x) && (p.y === this.y);
+    }
+
+    setAsIndex(index){
+         this.x = index % 4;
+         this.y = Math.floor(index / 4);
+    }
+
+    clone(){
+         return new Point(this.x, this.y);
+    }
+
+    offset(dx, dy){
+         Assert.ok(Number.isInteger(dx) && Number.isInteger(dy));
+         this.x += dx;
+         this.y += dy;
+    }
+
+    toIndex(){
+         return this.x + this.y * 4;
+    }
+
+    static pointToIndex(x, y){
+         return x + y*4;
+    }
+}
+
+//------------------------------------------------------------------------------
+const BLANK    = 16;
+const MV_UP    = 0;
+const MV_DOWN  = 1;
+const MV_LEFT  = 2;
+const MV_RIGHT = 3;
+const MV_END   = 4;
+
+//------------------------------------------------------------------------------
+class Puzzle
+{
+    //-------------------------------------------------------------------------
+    constructor(ref){
+         this.m_data = [];
+         this.m_fixed = [];
+         for( let n = 0 ; n < 16 ; n++ )
+         {
+              if( ref && ref.constructor.name === 'Puzzle' )
+              {
+                   this.m_data[n] = ref.m_data[n];
+              }
+              else
+              {
+                   this.m_data[n] = n+1;
+              }
+              this.m_fixed[n] = false;
+         }
+         this.m_recording = false;
+         this.m_record = [];
+    }
+
+    //-------------------------------------------------------------------------
+    dump(){
+         let s = [];
+         for( let n = 0 ; n < 16 ; n++ )
+         {
+              s.push(` ${(this.m_data[n] === BLANK)? ' ' : this.m_data[n]}`.slice(-2));
+         }
+         console.log('+--+--+--+--+');
+         console.log(`|${s.slice(0,4).join('|')}|`);
+         console.log('+--+--+--+--+');
+         console.log(`|${s.slice(4,8).join('|')}|`);
+         console.log('+--+--+--+--+');
+         console.log(`|${s.slice(8,12).join('|')}|`);
+         console.log('+--+--+--+--+');
+         console.log(`|${s.slice(12,16).join('|')}|`);
+         console.log('+--+--+--+--+');
+    }
+    
+    //-------------------------------------------------------------------------
+    initialize(){
+         for( let n = 0 ; n < 16 ; n++ )
+         {
+              this.m_data[n] = n+1;
+              this.m_fixed[n] = false;
+         }
+    }
+
+    //-------------------------------------------------------------------------
+    get data(){
+         return this.m_data;
+    }
+
+    getData(p){
+         if( p.constructor.name === 'Point' )
+         {
+              p = p.toIndex();
+         }
+         return this.m_data[p];
+    }
+    setData(p, v){
+         if( p.constructor.name === 'Point' )
+         {
+              p = p.toIndex();
+         }
+         this.m_data[p] = v;
+    }
+
+    //-------------------------------------------------------------------------
+    getFixed(p){
+         if( p.constructor.name === 'Point' )
+         {
+              p = p.toIndex();
+         }
+         return this.m_fixed[p];
+    }
+    setFixed(p, v){
+         if( p.constructor.name === 'Point' )
+         {
+              p = p.toIndex();
+         }
+         this.m_fixed[p] = v;
+    }
+
+    //-------------------------------------------------------------------------
+    swap(array, i, j){
+         let t = array[i];
+         array[i] = array[j];
+         array[j] = t;
+    }
+
+    //-------------------------------------------------------------------------
+    isCompleted(){
+         for( let n = 0 ; n < 16 ; n++ )
+         {
+              if( this.m_data[n] !== n+1 )
+              {
+                   return false;
+              }
+         }
+         return true;
+    }
+
+    //-------------------------------------------------------------------------
+    shuffle(){
+         this.initialize();
+         let swapCount = 0;
+         for( let i = 14 ; i > 1 ; i-- )
+         {
+              let r = Math.floor(Math.random()*(i-1));
+              this.swap(this.m_data, r, i);
+              swapCount++;
+         }
+         if( swapCount % 2 )
+         {
+              this.swap(this.m_data, 0, 1);
+         }
+    }
+
+    //-------------------------------------------------------------------------
+    //   ptの位置にあるピースが(もしあれば)移動可能かどうか調べ、
+    //   移動可能な方向を取得する
+    //-------------------------------------------------------------------------
+    canMove(ptTarget){
+         Assert.equal('Point', ptTarget.constructor.name);
+
+         let ptDelta = [
+              new Point(0, 1),
+              new Point(0, -1),
+              new Point(1, 0),
+              new Point(-1, 0)
+         ];
+
+         let ptBlank = this.findPiece(BLANK);
+         for( let n = 0 ; n < 4 ; n++ )
+         {
+              let ptTmp = ptBlank.clone();
+              ptTmp.offset(ptDelta[n].x, ptDelta[n].y);
+              if( ptTmp.equals(ptTarget) )
+              {
+                   return ['up', 'down', 'left', 'right'][n];
+                   // return n;
+              }
+         }
+         // return -1;
+         return null;
+    }
+
+    //-------------------------------------------------------------------------
+    //   番号numberのピースのある場所を探す
+    //-------------------------------------------------------------------------
+    findPiece(number){
+         let pt = new Point(0, 0);
+         for( let i = 0 ; i < 16 ; i++ )
+         {
+              if( this.m_data[i] === number )
+              {
+                   pt.setAsIndex(i);
+                   break;
+              }
+         }
+         return pt;
+    }
+
+    //-------------------------------------------------------------------------
+    //   現在の盤面で，dir方向へ移動可能なピースの番号を取得する
+    //-------------------------------------------------------------------------
+    getMovablePiece(dir){
+         let ptDelta = [
+              new Point(0, 1),
+              new Point(0, -1),
+              new Point(1, 0),
+              new Point(-1, 0),
+              new Point(0, 0)
+         ];
+         let ptBlank  = this.findPiece(BLANK);
+         let ptTarget = ptBlank.clone();
+         ptTarget.offset(ptDelta[dir].x, ptDelta[dir].y);
+         return this.getData(ptTarget);
+    }
+
+    //-------------------------------------------------------------------------
+    //   ピースを指定した方向へ移動する
+    //   (動かすピースは現在の空白の位置と移動方向の指定で一意に決まる)
+    //-------------------------------------------------------------------------
+    movePiece(dir)
+    {
+         if( typeof(dir) === 'string' )
+         {
+              dir = ['up', 'down', 'left', 'right'].indexOf(dir);
+              if( dir < 0 ){ dir = MV_END; }
+         }
+
+         let ptDelta = [
+              new Point(0, 1),
+              new Point(0, -1),
+              new Point(1, 0),
+              new Point(-1, 0),
+              new Point(0, 0)
+         ];
+
+         let ptBlank  = this.findPiece(BLANK);
+         let ptTarget = ptBlank.clone();
+         ptTarget.offset(ptDelta[dir].x, ptDelta[dir].y);
+
+         if( !ptTarget.valid() || this.getFixed(ptTarget) )
+         {
+              return false;
+         }
+
+         this.setData(ptBlank, this.getData(ptTarget));
+         this.setData(ptTarget, BLANK);
+
+         if( this.m_recording )
+         {
+              this.m_record.push(dir);
+         }
+
+         return true;
+    }
+
+    //-------------------------------------------------------------------------
+    //   空白を ptAround の回りをぐるっと ptDest まで移動する
+    //-------------------------------------------------------------------------
+    moveBlankAround(ptDest, ptAround){
+         let s = [
+              new Point(1, 0), 
+              new Point(1, 1),
+              new Point(0, 1),
+              new Point(-1, 1),
+              new Point(-1, 0),
+              new Point(-1, -1),
+              new Point(0, -1),
+              new Point(1, -1)
+         ];
+
+         let ptBlank = this.findPiece(BLANK);
+         if( ptBlank.equals(ptDest) )
+         {
+              return;
+         }
+
+         // ゴールの方向を探す
+         let dir = -1;
+         for( let i = 0 ; i < 8 ; i++ )
+         {
+              let p = ptAround.clone();
+              p.offset(s[i].x, s[i].y);
+              if( p.equals(ptBlank) )
+              {
+                   dir = i;
+                   break;
+              }
+         }
+         Assert.ok(dir !== -1);
+
+         // 左回りに距離を数える
+         let LF = -1;
+         for( let i = 0 ; i < 8 ; i++ )
+         {
+              let d = (dir + 8 - i) % 8;
+              let p = ptAround.clone();
+              p.offset(s[d].x, s[d].y);
+              if( !p.valid() || this.getFixed(p) )
+              {
+                   LF = 999;
+                   break;
+              }
+              if( p.equals(ptDest) )
+              {
+                   LF = i;
+                   break;
+              }
+         }
+
+         // 右回りに距離を数える
+         let RF = -1;
+         for( let i = 0 ; i < 8 ; i++ )
+         {
+              let d = (dir + i) % 8;
+              let p = ptAround.clone();
+              p.offset(s[d].x, s[d].y);
+              if( !p.valid() || this.getFixed(p) )
+              {
+                   RF = 999;
+                   break;
+              }
+              if( p.equals(ptDest) )
+              {
+                   RF = i;
+                   break;
+              }
+         }
+         Assert.ok((LF !== -1) || (RF !== -1));
+         Assert.ok((LF !== 999) || (RF !== 999));
+
+         // 左右、近い方の回りかたを採用する
+         if( LF < RF )
+         {
+              let mv = [MV_DOWN, MV_RIGHT, MV_RIGHT, MV_UP, MV_UP, MV_LEFT, MV_LEFT, MV_DOWN];
+              for( let i = 0 ; i < LF ; i++ )
+              {
+                   this.movePiece(mv[(i + 8 - dir) % 8]);
+              }
+         }
+         else
+         {
+              let mv = [MV_UP, MV_RIGHT, MV_RIGHT, MV_DOWN, MV_DOWN, MV_LEFT, MV_LEFT, MV_UP];
+              for( let i = 0 ; i < RF ; i++ )
+              {
+                   this.movePiece(mv[(i + dir) % 8]);
+              }
+         }
+    }
+
+    //-------------------------------------------------------------------------
+    //   空白を ptDest まで可能なかぎり移動する
+    //-------------------------------------------------------------------------
+    moveBlankStraight(ptDest){
+         let bRet;
+         do
+         {
+              bRet = false;
+              let ptBlank = this.findPiece(BLANK);
+              if( ptBlank.equals(ptDest) )
+              {
+                   break;
+              }
+
+              if( ptBlank.y > ptDest.y )
+              {
+                   if( this.movePiece(MV_DOWN) ){ bRet = true; }
+              }
+              if( !bRet && ptBlank.x > ptDest.x )
+              {
+                   if( this.movePiece(MV_RIGHT) ){ bRet = true; }
+              }
+              if( !bRet && ptBlank.y < ptDest.y )
+              {
+                   if( this.movePiece(MV_UP) ){ bRet = true; }
+              }
+              if( !bRet && ptBlank.x < ptDest.x )
+              {
+                   if( this.movePiece(MV_LEFT) ){ bRet = true; }
+              }
+         }
+         while( bRet );
+    }
+
+    //-------------------------------------------------------------------------
+    //   ptTarget を移動するために、空白を ptDest まで移動する
+    //-------------------------------------------------------------------------
+    moveBlank(ptDest, ptTarget){
+         this.moveBlankStraight(ptDest);
+         this.moveBlankAround(ptDest, ptTarget);
+    }
+
+    //-------------------------------------------------------------------------
+    //   番号cのピースを ptDst(x,y) まで移動する
+    //   まず、動きたい方向に空白を移動し、
+    //   次に、そちらにコマを動かす
+    //-------------------------------------------------------------------------
+    movePieceOfNumber(number, ptDest){
+         let ptTarget = new Point(0, 0);
+         let ptTemp = new Point(0, 0);
+         let dir;
+
+         while( true )
+         {
+              let r = false;
+              ptTarget = this.findPiece(number);
+              if( ptTarget.equals(ptDest) )
+              {
+                   break;
+              }
+              if( ptTarget.y > ptDest.y )
+              {
+                   ptTemp.x = ptTarget.x;
+                   ptTemp.y = ptTarget.y - 1;
+                   dir = MV_UP;
+                   if( !this.getFixed(ptTemp) )
+                   {
+                        r = true;
+                   }
+              }
+              if( !r && ptTarget.x > ptDest.x )
+              {
+                   ptTemp.x = ptTarget.x - 1;
+                   ptTemp.y = ptTarget.y;
+                   dir = MV_LEFT;
+                   if( !this.getFixed(ptTemp) )
+                   {
+                        r = true;
+                   }
+              }
+              if( !r && ptTarget.x < ptDest.x)
+              {
+                   ptTemp.x = ptTarget.x + 1;
+                   ptTemp.y = ptTarget.y;
+                   dir = MV_RIGHT;
+                   if( !this.getFixed(ptTemp) )
+                   {
+                        r = true;
+                   }
+              }
+              Assert.ok(r);
+
+              this.setFixed(ptTarget, true);
+              this.moveBlank(ptTemp, ptTarget);
+              this.setFixed(ptTarget, false);
+              this.movePiece(dir);
+         }
+    }
+
+    //-------------------------------------------------------------------------
+    //   2つのピースの位置を入れ替える
+    //
+    //   4 3       3 4
+    //   a     →    b
+    //   b c       a c
+    //-------------------------------------------------------------------------
+    swapProcH(){
+         let seq = [
+              MV_DOWN, MV_RIGHT, MV_UP, MV_UP, MV_LEFT, MV_DOWN,
+              MV_RIGHT, MV_DOWN, MV_LEFT, MV_UP, MV_UP, MV_RIGHT,
+              MV_DOWN, MV_LEFT, MV_DOWN, MV_RIGHT, MV_UP,
+              MV_END
+         ];
+         for( let i = 0 ; seq[i] !== MV_END ; i++ )
+         {
+              this.movePiece(seq[i]);
+         }
+    }
+    //-------------------------------------------------------------------------
+    //   13 a b       9   a
+    //    9   c  →  13 b c
+    //-------------------------------------------------------------------------
+    swapProcV(){
+         let seq = [
+              MV_RIGHT, MV_DOWN, MV_LEFT, MV_LEFT, MV_UP, MV_RIGHT,
+              MV_DOWN, MV_RIGHT, MV_UP, MV_LEFT, MV_LEFT, MV_DOWN,
+              MV_RIGHT, MV_UP, MV_RIGHT, MV_DOWN, MV_LEFT,
+              MV_END
+         ];
+         for( let i = 0 ; seq[i] !== MV_END ; i++ )
+         {
+              this.movePiece(seq[i]);
+         }
+    }
+
+    //-------------------------------------------------------------------------
+    //   第１行をそろえる
+    //   →1 2 3 4
+    //     * * * *
+    //     * * * *
+    //     * * * *
+    //-------------------------------------------------------------------------
+    solve1stRow(){
+         // [1]を移動
+         this.movePieceOfNumber(1, new Point(0, 0));
+         this.setFixed(0, true);
+
+         // [2]を移動
+         this.movePieceOfNumber(2, new Point(1, 0));
+         this.setFixed(1, true);
+
+         if( this.getData(new Point(2, 0)) !== 3 || this.getData(new Point(3, 0)) !== 4 )
+         {
+              this.movePieceOfNumber(4, new Point(2, 0));
+              this.setFixed(new Point(2, 0), true);
+              let pt3 = this.findPiece(3);
+              let ptBlank = this.findPiece(BLANK);
+              if( (pt3.x === 3) && ((pt3.y === 0) || ((pt3.y === 1) && (ptBlank.equals(new Point(3, 0))))) )
+              {
+                   this.moveBlank(new Point(3, 0), new Point(2, 0));    // 1 2 4 3 の場合
+                   this.setFixed(new Point(2, 0), false);
+                   this.swapProcH();   // 入れ替え
+              }
+              else
+              {
+                   this.movePieceOfNumber(3, new Point(2, 1));                 // 次のパターンを目標にする
+                   this.setFixed(new Point(2, 1), true);                       //   1 2 4
+                   this.moveBlank(new Point(3, 0), new Point(2, 1));           //   * * 3 *
+                   this.setFixed(new Point(2, 0), false);                      //   * * * *
+                   this.setFixed(new Point(2, 1), false);                      //   * * * *
+                   this.movePiece(MV_RIGHT);
+                   this.movePiece(MV_UP);                       // これで 1 2 3 4 になる
+              }
+         }
+         this.setFixed(2, true);
+         this.setFixed(3, true);
+    }
+
+    //-------------------------------------------------------------------------
+    //   第２行をそろえる
+    //     1 2 3 4
+    //   →5 6 7 8
+    //     * * * *
+    //     * * * *
+    //-------------------------------------------------------------------------
+    solve2ndRow(){
+         this.movePieceOfNumber(5, new Point(0, 1));
+         this.setFixed(4, true);
+         this.movePieceOfNumber(6, new Point(1, 1));
+         this.setFixed(5, true);
+
+         if( this.getData(new Point(2, 1)) !== 7 || this.getData(new Point(3, 1)) !== 8 )
+         {
+              this.movePieceOfNumber(8, new Point(2, 1));
+              this.setFixed(new Point(2, 1), true);
+              let pt7 = this.findPiece(7);
+              let ptBlank = this.findPiece(BLANK);
+              if( (pt7.x === 3) && ((pt7.y === 1) || ((pt7.y === 2) && ptBlank.equals(new Point(3, 1)))) )
+              {
+                   this.moveBlank(new Point(3, 1), new Point(2, 1));    // 5 6 8 7 の場合
+                   this.setFixed(new Point(2, 1), false);
+                   this.swapProcH();   // 入れ替え
+              }
+              else
+              {
+                   this.movePieceOfNumber(7, new Point(2, 2));                 //  1 2 3 4
+                   this.setFixed(new Point(2, 2), true);                       //  5 6 8
+                   this.moveBlank(new Point(3, 1), new Point(2, 2));           //  * * 7 *
+                   this.setFixed(new Point(2, 1), false);                      //  * * * *   にする
+                   this.setFixed(new Point(2, 2), false);
+                   this.movePiece(MV_RIGHT);
+                   this.movePiece(MV_UP);             // これで 5 6 7 8 が完成
+              }
+    }
+    this.setFixed(new Point(2, 1), true);
+    this.setFixed(new Point(3, 1), true);
+    }
+
+    //-------------------------------------------------------------------------
+    //   左下をそろえる
+    //     1 2 3 4
+    //     5 6 7 8
+    //     9 * * *
+    //    13 * * *
+    //    ↑
+    //-------------------------------------------------------------------------
+    solveBottomLeft1(){
+         this.movePieceOfNumber(13, new Point(0, 2));
+         this.setFixed(new Point(0, 2), true);
+         let pt = this.findPiece(9);
+         if( (pt.y === 3) && ((pt.x === 0) || ((pt.x === 1) &&  this.findPiece(BLANK).equals(new Point(0, 3)))) )
+         {
+              this.moveBlank(new Point(0, 3), new Point(0, 2));      // 13
+              this.setFixed(new Point(0, 2), false);                 //  9 の場合
+              this.swapProcV();   // 入れ替え
+         }
+         else
+         {
+              this.movePieceOfNumber(9, new Point(1, 2));            //   1 2 3 4
+              this.setFixed(new Point(1, 2), true);                  //   5 6 7 8
+              this.moveBlank(new Point(0, 3), new Point(1, 2));      //  13 9 * *
+              this.setFixed(new Point(0, 2), false);                 //     * * *  にする
+              this.setFixed(new Point(1, 2), false);
+              this.movePiece(MV_DOWN);      // これで  9
+              this.movePiece(MV_LEFT);      //        13   になる
+         }
+         this.setFixed(new Point(0, 2), true);
+         this.setFixed(new Point(0, 3), true);
+    }
+
+    //-------------------------------------------------------------------------
+    //   左下第２列をそろえる
+    //       1  2 3 4
+    //       5  6 7 8
+    //       9 10 * *
+    //      13 14 * *
+    //         ↑
+    //-------------------------------------------------------------------------
+    solveBottomLeft2()
+    {
+         this.movePieceOfNumber(14, new Point(1, 2));
+         this.setFixed(new Point(1, 2), true);
+         let pt = this.findPiece(10);
+         if( (pt.y === 3) && ((pt.x === 1) || ((pt.x === 2) && this.findPiece(BLANK).equals(new Point(1, 3)))) )
+         {
+              this.moveBlank(new Point(1, 3), new Point(1, 2));    // 14
+              this.setFixed(new Point(1, 2), false);             // 10 の場合
+              this.swapProcV();   // 入れ替える
+         }
+         else
+         {
+              this.movePieceOfNumber(10, new Point(2, 2));                //   1  2  3  4
+              this.setFixed(new Point(2, 2), true);                       //   5  6  7  8
+              this.moveBlank(new Point(1, 3), new Point(2, 2));           //   9 14 10  *
+              this.setFixed(new Point(1, 2), false);                      //  13     *  * にする
+              this.setFixed(new Point(2, 2), false);
+              this.movePiece(MV_DOWN);      // これで  10
+              this.movePiece(MV_LEFT);      //         14 になる
+         }
+         this.setFixed(new Point(1, 2), true);
+         this.setFixed(new Point(1, 3), true);
+    }
+
+    //-------------------------------------------------------------------------
+    //   右下をそろえる
+    //     1  2  3  4
+    //     5  6  7  8
+    //     9 10 11 12 ←
+    //    13 14 15
+    //          ↑
+    //-------------------------------------------------------------------------
+    solveBottomRight(){
+         let seq = [MV_RIGHT, MV_DOWN, MV_LEFT, MV_UP];
+         for( let i = 0 ; ; i++ )
+         {
+              // 揃うまで右回りに移動する
+              if( this.findPiece(BLANK).equals(new Point(3, 3)) && this.getData(new Point(2, 2)) === 11 )
+              {
+                   break;
+              }
+              this.movePiece(seq[i % 4]);
+         }
+    }
+
+    //-------------------------------------------------------------------------
+    solve()
+    {
+         let pClone = new Puzzle(this);
+         pClone.m_recording = true;
+         pClone.solve1stRow();
+         pClone.solve2ndRow();
+         pClone.solveBottomLeft1();
+         pClone.solveBottomLeft2();
+         pClone.solveBottomRight();
+         return pClone.m_record;
+    }
+}
+
+//------------------------------------------------------------------------------
+//module.exports = Puzzle;
