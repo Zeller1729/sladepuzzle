@@ -12,8 +12,8 @@ function arrangeAllPieces(data){
           }
           let $piece = $(`#${data[n]}`);
           $piece.offset({
-               left: offset.left + (n % 4)*150,
-               top:  offset.top  + Math.floor(n / 4)*150
+               left: offset.left + (n % 4)*125,
+               top:  offset.top  + Math.floor(n / 4)*125
           });
      }
 }
@@ -29,21 +29,22 @@ function updateView(number, dir, callback){
      {
           case 'left':
           case 2:
-               pos.left -= 150;
+               pos.left -= 125;
                break;
           case 'up':
           case 0:
-               pos.top -= 150;
+               pos.top -= 125;
                break;
           case 'right':
           case 3:
-               pos.left += 150;
+               pos.left += 125;
                break;
           case 'down':
           case 1:
-               pos.top += 150;
+               pos.top += 125;
                break;
      }
+     count();
      $piece.animate({
           left: `${pos.left - ofs.left}px`,
           top:  `${pos.top - ofs.top}px`
@@ -63,6 +64,15 @@ function autoSolve(puzzle, solution){
           autoSolve(puzzle, solution);
      });
 }
+//------------------------------------------------------------------------------
+//   動かした回数をカウント
+//------------------------------------------------------------------------------
+function count(){
+     var thisCount = $("#count").html();
+         thisCount = Number(thisCount);
+         thisCount = thisCount + 1;
+     $("#count").html(thisCount);
+   }
 
 //------------------------------------------------------------------------------
 //   ドキュメントロード時の処理
@@ -82,17 +92,21 @@ $(function(){
                     updateView(number, dir, function(){
                          if( puzzle.isCompleted() )
                          {
-                              alert('完成です．おめでとう！');
+                              var  click_t= $("#count").html();
+                              click_t = Number(click_t);
+                              alert('完成です．おめでとうございます。！\n動かした回数：'+click_t+'回');
                          }
                     });
                }
           });
      }
      
-     // 「スタート」ボタンのクリックイベント処理
-     $("#start").on('click', function(){
+     // 「リセット」ボタンのクリックイベント処理
+     $("#reset").on('click', function(){
           puzzle.shuffle();
           arrangeAllPieces(puzzle.data);
+           $("#count").html(0);
+
      });
 
      // 「ギブアップ」ボタンのクリックイベント処理
@@ -103,6 +117,6 @@ $(function(){
 
      arrangeAllPieces(puzzle.data);
 
-     // スタート
-     $("#start").trigger('click');
+     // リセット
+     $("#reset").trigger('click');
 });
